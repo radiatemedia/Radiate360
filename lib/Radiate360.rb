@@ -24,25 +24,24 @@ module Radiate360
     def call(api_action, params, method, &block)
       # apply some defaults so we don't have nil object errors
       params = { :fields => {},
-                 :constraints => {},
+                 :constraints => { :required => [] },
                  :credentials => { :username => config.username,
                                    :password => config.password } }.merge( params )
-      with_config params[:fields] do |parameters|
-        validate(parameters, params[:constraints])
-        http, request = setup_call(api_action, parameters, method)
-
-        http.start do |http|
-          log "Making API to #{http.address + request.path}. Parameters are: #{parameters.inspect}", :info
-          res = http.request(request)
-          log res.body, :debug
-          if res.body.nil? || res.body.empty?
-            log "Got response: #{res.code} location: #{res['location']}", :debug
-            yield_for_block({}, block)
-          else
-            response = parse_response(res)
-            log "Got response: #{response.inspect}", :debug
-            yield_for_block(response['result'], block)
-          end
+      
+      validate(params[:fields], params[:constraints])
+      http, request = setup_call(api_action, params[:fields], params[:credentials], method)
+      
+      http.start do |http|
+        log "Making API to #{http.address + ":" + http.port.to_s + request.path}. Parameters are: #{params[:fields].inspect}", :info
+        res = http.request(request)
+        log res.body, :debug
+        if res.body.nil? || res.body.empty?
+          log "Got response: #{res.code} location: #{res['location']}", :debug
+          yield_for_block({}, block)
+        else
+          res_data = parse_response(res)
+          log "Got response data: #{res_data.inspect}", :debug
+          yield_for_block(res_data, block)
         end
       end
     end
@@ -83,7 +82,7 @@ module Radiate360
       URI(u.to_s)
     end
 
-    def setup_call(action, params, method)
+    def setup_call(action, params, credentials, method)
       uri = secure_uri(config.url + "/#{config.version}/#{action.to_s}")
 
       if method == :post
@@ -91,10 +90,13 @@ module Radiate360
         request.set_form_data(params)
       else
         uri.query = params.collect { |key, value| [URI.encode(key.to_s), URI.encode(value.to_s)].join('=') }.join('&')
-        request = Net::HTTP::Get.new(uri.request_uri)
+        request = Net::HTTP::Get.new(uri.path)
       end
 
-      request.basic_auth params[:credentials][:username], params[:credentials][:password]
+
+      # Make sure we have all the required credentials
+      raise AuthenticationError.new('Please specify your username/password') if credentials[:username].blank? || credentials[:password].blank?
+      request.basic_auth credentials[:username], credentials[:password]
 
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = config.use_ssl
@@ -103,55 +105,31 @@ module Radiate360
     end
 
     def validate(params, constraints)
-      # Make sure we have all the required information
-      # raise AuthenticationError.new('Please specify your username/password') if config.useranme.nil? || config.useranme.empty? || config.password.nil? || config.password.empty?
       if required_fields = constraints[:required]
         required_fields = %w(username business_id) if required_fields == :default
 
         missing_required_fields = (required_fields).select do |required_field|
-          params[required_field.to_sym].nil? || params[required_field.to_sym].empty?
+          params[required_field.to_sym].blank?
         end
         raise InvalidRequestError.new('Please specify the missing required fields to continue: %s' % missing_required_fields.join(',')) unless missing_required_fields.empty?
       end
     end
 
-    def with_config(fields, &block)
-      yield fields.merge(:username => config.username, :password => config.password)
-    end
-
     # So, the response from CCPZ should be JSON
-    # def parse_response(resp)
-    #   begin
-    #     doc = REXML::Document.new(resp.body)
-    #   rescue Exception => e
-    #     raise MarketectureError.new("An unknown error occured in the API: %s" % e.message)
-    #   end
-    # 
-    #   case doc.elements["result/code"].text
-    #   when "-1" then raise AuthenticationError.new(doc.elements["result/message"])
-    #   when "0" then raise InvalidRequestError.new(doc.elements["result/message"])
-    #   else
-    #     hash_from_xml(doc)
-    #   end
-    # end
-    # 
-    # def hash_from_xml(document)
-    #   hash = {}
-    #   document.each_element do |elem|
-    #     if elem.elements.empty?
-    #       hash[elem.name] = elem.text
-    #     else
-    #       hash[elem.name] = hash_from_xml(elem)
-    #     end
-    #   end
-    # 
-    #   hash
-    # end
+    def parse_response(resp)
+      begin
+        json = JSON.parse(resp.body)
+      rescue Exception => e
+        raise Radiate360Error.new("An unknown error occured in the API: %s" % e.message)
+      end
+
+      json
+    end
   end
 end
 
-require 'Radiate360/models/api_key'
-require 'Radiate360/models/business'
+require 'Radiate360/api_key'
+require 'Radiate360/business'
 require 'Radiate360/configuration'
 require 'net/http'
 require 'net/https'
