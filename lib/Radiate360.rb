@@ -131,5 +131,6 @@ end
 require 'Radiate360/api_key'
 require 'Radiate360/business'
 require 'Radiate360/configuration'
+require 'active_support/core_ext/object/blank'
 require 'net/http'
 require 'net/https'
