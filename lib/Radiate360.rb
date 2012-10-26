@@ -24,10 +24,12 @@ module Radiate360
     def call(api_action, params, method, &block)
       # apply some defaults so we don't have nil object errors
       params = { :fields => {},
-                 :constraints => { :required => [] },
-                 :credentials => { :username => config.username,
-                                   :password => config.password } }.merge( params )
+                 :credentials => {},
+                 :constraints => { :required => [] } }.merge( params )
       
+      params[:credentials][:username] ||= config.username
+      params[:credentials][:password] ||= config.password
+
       validate(params[:fields], params[:constraints])
       http, request = setup_call(api_action, params[:fields], params[:credentials], method)
       
