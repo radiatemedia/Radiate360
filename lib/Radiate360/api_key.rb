@@ -1,5 +1,3 @@
-require_relative 'struct_extensions'
-
 Radiate360::ApiKey = Struct.new :username, :business_id do
   include StructExtensions
 

@@ -130,6 +130,7 @@ module Radiate360
   end
 end
 
+require 'Radiate360/struct_extensions'
 require 'Radiate360/api_key'
 require 'Radiate360/business'
 require 'Radiate360/configuration'
